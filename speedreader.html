@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SpeedRead</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --surface2: #1c1c28;
+    --border: #2a2a3a;
+    --accent: #e8321a;
+    --accent-glow: rgba(232, 50, 26, 0.3);
+    --text: #e8e8f0;
+    --muted: #666680;
+    --word-size: clamp(2.2rem, 7vw, 4.5rem);
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    overflow-x: hidden;
+  }
+
+  body {
+    display: flex;
+    flex-direction: column;
+    min-height: 100dvh;
+  }
+
+  /* Grain overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 999;
+    opacity: 0.6;
+  }
+
+  header {
+    padding: 1.2rem 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .logo-dot {
+    width: 10px; height: 10px;
+    background: var(--accent);
+    border-radius: 50%;
+    box-shadow: 0 0 12px var(--accent);
+    flex-shrink: 0;
+  }
+
+  header h1 {
+    font-size: 1rem;
+    font-weight: 800;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--text);
+  }
+
+  header span {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--muted);
+    margin-left: auto;
+    letter-spacing: 0.05em;
+  }
+
+  main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 1.2rem;
+    gap: 1rem;
+    max-width: 700px;
+    width: 100%;
+    margin: 0 auto;
+  }
+
+  /* === READER DISPLAY === */
+  .reader-stage {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    position: relative;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  /* Centre alignment guide lines */
+  .reader-stage::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 0; bottom: 0;
+    width: 1px;
+    background: linear-gradient(to bottom, transparent, var(--border) 30%, var(--border) 70%, transparent);
+    opacity: 0.4;
+    pointer-events: none;
+  }
+
+  .word-display {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: clamp(120px, 22vw, 180px);
+    padding: 1.5rem 1rem;
+    position: relative;
+  }
+
+  .word-container {
+    display: flex;
+    align-items: baseline;
+    gap: 0;
+    font-family: 'DM Mono', monospace;
+    font-size: var(--word-size);
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    line-height: 1;
+    transition: opacity 0.05s;
+    user-select: none;
+  }
+
+  .word-container.flash {
+    opacity: 0;
+  }
+
+  .letter { color: var(--text); }
+  .letter.pivot {
+    color: var(--accent);
+    text-shadow: 0 0 20px var(--accent-glow), 0 0 40px var(--accent-glow);
+    position: relative;
+  }
+
+  /* Tick marks above pivot */
+  .pivot-marker {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    top: -6px;
+    width: 2px;
+    height: 5px;
+    background: var(--accent);
+    border-radius: 1px;
+    opacity: 0.7;
+  }
+
+  .idle-text {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+    text-align: center;
+  }
+
+  /* Progress bar */
+  .progress-bar-wrap {
+    height: 3px;
+    background: var(--surface2);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), #ff6b50);
+    width: 0%;
+    transition: width 0.1s linear;
+    box-shadow: 0 0 8px var(--accent-glow);
+  }
+
+  /* Stats row */
+  .stats-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.6rem 1rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .stat {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+  }
+
+  .stat strong {
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  /* === CONTROLS === */
+  .controls {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+  }
+
+  .speed-row {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.9rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  .speed-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .speed-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .speed-value {
+    font-family: 'DM Mono', monospace;
+    font-size: 1.1rem;
+    font-weight: 500;
+    color: var(--accent);
+  }
+
+  .speed-value small {
+    font-size: 0.65rem;
+    color: var(--muted);
+    margin-left: 2px;
+  }
+
+  /* Slider */
+  input[type=range] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    background: var(--surface2);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+    position: relative;
+  }
+
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 20px; height: 20px;
+    background: var(--text);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 0 0 3px var(--bg), 0 0 12px rgba(232,50,26,0.4);
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+
+  input[type=range]::-webkit-slider-thumb:hover,
+  input[type=range]:active::-webkit-slider-thumb {
+    transform: scale(1.2);
+    box-shadow: 0 0 0 3px var(--bg), 0 0 18px var(--accent-glow);
+  }
+
+  input[type=range]::-moz-range-thumb {
+    width: 20px; height: 20px;
+    background: var(--text);
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+  }
+
+  .speed-presets {
+    display: flex;
+    gap: 0.4rem;
+  }
+
+  .preset-btn {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.68rem;
+    padding: 0.3rem 0;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.15s;
+    letter-spacing: 0.03em;
+  }
+
+  .preset-btn:hover { background: var(--border); color: var(--text); }
+  .preset-btn.active { background: var(--accent); border-color: var(--accent); color: white; }
+
+  /* Play / Pause / Reset row */
+  .btn-row {
+    display: flex;
+    gap: 0.7rem;
+  }
+
+  .btn-play {
+    flex: 1;
+    background: var(--accent);
+    border: none;
+    color: white;
+    font-family: 'Syne', sans-serif;
+    font-size: 0.95rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 0.9rem;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+    box-shadow: 0 4px 20px var(--accent-glow);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+
+  .btn-play:hover { filter: brightness(1.1); transform: translateY(-1px); }
+  .btn-play:active { transform: translateY(0); }
+  .btn-play:disabled { background: var(--surface2); color: var(--muted); box-shadow: none; cursor: not-allowed; transform: none; }
+
+  .btn-reset {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family: 'Syne', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 0.9rem 1.2rem;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-reset:hover { border-color: var(--muted); color: var(--text); }
+  .btn-reset:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* === TEXT INPUT === */
+  .input-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    flex: 1;
+  }
+
+  .input-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  textarea {
+    width: 100%;
+    flex: 1;
+    min-height: 120px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.82rem;
+    line-height: 1.6;
+    padding: 0.9rem;
+    resize: vertical;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  textarea::placeholder { color: var(--muted); }
+  textarea:focus { border-color: var(--accent); }
+
+  .word-count {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.68rem;
+    color: var(--muted);
+    text-align: right;
+  }
+
+  /* Keyboard hint */
+  .hint {
+    text-align: center;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+    padding-bottom: 0.5rem;
+  }
+
+  kbd {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-size: 0.65rem;
+  }
+
+  /* Finish state */
+  .finish-flash {
+    animation: finishPulse 0.6s ease;
+  }
+
+  @keyframes finishPulse {
+    0% { box-shadow: inset 0 0 0 0 var(--accent-glow); }
+    50% { box-shadow: inset 0 0 60px 10px var(--accent-glow); }
+    100% { box-shadow: inset 0 0 0 0 var(--accent-glow); }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo-dot"></div>
+  <h1>SpeedRead</h1>
+  <span>RSVP Reader</span>
+</header>
+
+<main>
+
+  <!-- Reader Display -->
+  <div class="reader-stage" id="readerStage">
+    <div class="word-display" id="wordDisplay">
+      <div class="idle-text" id="idleText">Paste your text below, then press play</div>
+      <div class="word-container" id="wordContainer" style="display:none"></div>
+    </div>
+    <div class="progress-bar-wrap">
+      <div class="progress-bar-fill" id="progressBar"></div>
+    </div>
+    <div class="stats-row">
+      <span class="stat">Word <strong id="statCurrent">—</strong> of <strong id="statTotal">—</strong></span>
+      <span class="stat" id="statTime">— min remaining</span>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <div class="speed-row">
+      <div class="speed-header">
+        <span class="speed-label">Speed</span>
+        <span class="speed-value" id="speedDisplay">300 <small>WPM</small></span>
+      </div>
+      <input type="range" id="speedSlider" min="100" max="800" step="25" value="300">
+      <div class="speed-presets">
+        <button class="preset-btn" data-wpm="150">150</button>
+        <button class="preset-btn active" data-wpm="300">300</button>
+        <button class="preset-btn" data-wpm="450">450</button>
+        <button class="preset-btn" data-wpm="600">600</button>
+        <button class="preset-btn" data-wpm="800">800</button>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn-play" id="playBtn" disabled>
+        <span id="playIcon">▶</span>
+        <span id="playLabel">Play</span>
+      </button>
+      <button class="btn-reset" id="resetBtn" disabled>Reset</button>
+    </div>
+  </div>
+
+  <!-- Text Input -->
+  <div class="input-section">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <span class="input-label">Your Text</span>
+      <span class="word-count" id="wordCount">0 words</span>
+    </div>
+    <textarea id="textInput" placeholder="Paste or type your text here…" rows="5"></textarea>
+  </div>
+
+  <p class="hint">Press <kbd>Space</kbd> to pause / resume</p>
+
+</main>
+
+<script>
+  const textInput   = document.getElementById('textInput');
+  const wordDisplay = document.getElementById('wordDisplay');
+  const wordContainer = document.getElementById('wordContainer');
+  const idleText    = document.getElementById('idleText');
+  const progressBar = document.getElementById('progressBar');
+  const speedSlider = document.getElementById('speedSlider');
+  const speedDisplay= document.getElementById('speedDisplay');
+  const playBtn     = document.getElementById('playBtn');
+  const playIcon    = document.getElementById('playIcon');
+  const playLabel   = document.getElementById('playLabel');
+  const resetBtn    = document.getElementById('resetBtn');
+  const statCurrent = document.getElementById('statCurrent');
+  const statTotal   = document.getElementById('statTotal');
+  const statTime    = document.getElementById('statTime');
+  const wordCount   = document.getElementById('wordCount');
+  const readerStage = document.getElementById('readerStage');
+  const presets     = document.querySelectorAll('.preset-btn');
+
+  let words = [];
+  let currentIndex = 0;
+  let isPlaying = false;
+  let timer = null;
+  let wpm = 300;
+
+  // --- Pivot letter calculation ---
+  // Spritz algorithm: pivot is roughly 30% into the word
+  function getPivotIndex(word) {
+    const len = word.replace(/[^a-zA-Z0-9]/g, '').length || word.length;
+    if (len <= 1) return 0;
+    if (len <= 5) return 1;
+    if (len <= 9) return 2;
+    if (len <= 13) return 3;
+    return 4;
+  }
+
+  function renderWord(word) {
+    if (!word) return;
+    const pivot = getPivotIndex(word);
+    let html = '<div class="pivot-marker"></div>';
+    for (let i = 0; i < word.length; i++) {
+      if (i === pivot) {
+        html += `<span class="letter pivot">${word[i]}</span>`;
+      } else {
+        html += `<span class="letter">${word[i]}</span>`;
+      }
+    }
+    wordContainer.innerHTML = html;
+  }
+
+  function showWord(index) {
+    if (index >= words.length) {
+      stopReading(true);
+      return;
+    }
+
+    // Flash transition
+    wordContainer.classList.add('flash');
+    setTimeout(() => {
+      renderWord(words[index]);
+      wordContainer.classList.remove('flash');
+    }, 40);
+
+    // Update stats
+    statCurrent.textContent = index + 1;
+    const pct = ((index + 1) / words.length) * 100;
+    progressBar.style.width = pct + '%';
+
+    const wordsLeft = words.length - index - 1;
+    const minsLeft = Math.ceil(wordsLeft / wpm);
+    statTime.textContent = minsLeft <= 0 ? 'Almost done' : `~${minsLeft} min left`;
+  }
+
+  function startReading() {
+    if (words.length === 0) return;
+    if (currentIndex >= words.length) currentIndex = 0;
+
+    isPlaying = true;
+    playIcon.textContent = '⏸';
+    playLabel.textContent = 'Pause';
+
+    idleText.style.display = 'none';
+    wordContainer.style.display = 'flex';
+
+    const interval = Math.round(60000 / wpm);
+    showWord(currentIndex);
+
+    timer = setInterval(() => {
+      currentIndex++;
+      if (currentIndex >= words.length) {
+        stopReading(true);
+      } else {
+        showWord(currentIndex);
+      }
+    }, interval);
+  }
+
+  function pauseReading() {
+    isPlaying = false;
+    clearInterval(timer);
+    timer = null;
+    playIcon.textContent = '▶';
+    playLabel.textContent = 'Resume';
+  }
+
+  function stopReading(finished = false) {
+    isPlaying = false;
+    clearInterval(timer);
+    timer = null;
+    playIcon.textContent = '▶';
+
+    if (finished) {
+      playLabel.textContent = 'Done ✓';
+      playBtn.disabled = true;
+      progressBar.style.width = '100%';
+      statTime.textContent = 'Complete';
+      readerStage.classList.add('finish-flash');
+      setTimeout(() => readerStage.classList.remove('finish-flash'), 700);
+    } else {
+      playLabel.textContent = 'Play';
+    }
+  }
+
+  function resetReader() {
+    stopReading(false);
+    currentIndex = 0;
+    progressBar.style.width = '0%';
+    statCurrent.textContent = '—';
+    statTime.textContent = '— min remaining';
+    wordContainer.style.display = 'none';
+    wordContainer.innerHTML = '';
+    idleText.style.display = 'block';
+    idleText.textContent = 'Ready — press play';
+    playBtn.disabled = words.length === 0;
+    resetBtn.disabled = words.length === 0;
+  }
+
+  // --- Text input ---
+  textInput.addEventListener('input', () => {
+    const raw = textInput.value.trim();
+    words = raw ? raw.split(/\s+/).filter(w => w.length > 0) : [];
+    wordCount.textContent = words.length + ' word' + (words.length !== 1 ? 's' : '');
+    statTotal.textContent = words.length || '—';
+
+    const hasWords = words.length > 0;
+    playBtn.disabled = !hasWords;
+    resetBtn.disabled = !hasWords;
+
+    if (!hasWords) {
+      idleText.textContent = 'Paste your text below, then press play';
+      wordContainer.style.display = 'none';
+      idleText.style.display = 'block';
+      progressBar.style.width = '0%';
+      statCurrent.textContent = '—';
+      statTime.textContent = '— min remaining';
+    } else if (!isPlaying && currentIndex === 0) {
+      idleText.textContent = `${words.length} words ready — press play`;
+    }
+
+    // Reset if editing while stopped
+    if (!isPlaying) {
+      currentIndex = 0;
+      progressBar.style.width = '0%';
+      statCurrent.textContent = '—';
+      playIcon.textContent = '▶';
+      playLabel.textContent = 'Play';
+    }
+  });
+
+  // --- Play/Pause ---
+  playBtn.addEventListener('click', () => {
+    if (isPlaying) {
+      pauseReading();
+    } else {
+      startReading();
+    }
+  });
+
+  // --- Reset ---
+  resetBtn.addEventListener('click', () => {
+    resetReader();
+    if (words.length > 0) {
+      idleText.textContent = `${words.length} words ready — press play`;
+    }
+  });
+
+  // --- Speed slider ---
+  speedSlider.addEventListener('input', () => {
+    wpm = parseInt(speedSlider.value);
+    speedDisplay.innerHTML = wpm + ' <small>WPM</small>';
+
+    // Update active preset
+    presets.forEach(b => {
+      b.classList.toggle('active', parseInt(b.dataset.wpm) === wpm);
+    });
+
+    // Restart interval if playing
+    if (isPlaying) {
+      clearInterval(timer);
+      const interval = Math.round(60000 / wpm);
+      timer = setInterval(() => {
+        currentIndex++;
+        if (currentIndex >= words.length) {
+          stopReading(true);
+        } else {
+          showWord(currentIndex);
+        }
+      }, interval);
+    }
+  });
+
+  // --- Presets ---
+  presets.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const val = parseInt(btn.dataset.wpm);
+      wpm = val;
+      speedSlider.value = val;
+      speedDisplay.innerHTML = val + ' <small>WPM</small>';
+      presets.forEach(b => b.classList.toggle('active', b === btn));
+
+      if (isPlaying) {
+        clearInterval(timer);
+        const interval = Math.round(60000 / wpm);
+        timer = setInterval(() => {
+          currentIndex++;
+          if (currentIndex >= words.length) stopReading(true);
+          else showWord(currentIndex);
+        }, interval);
+      }
+    });
+  });
+
+  // --- Keyboard spacebar ---
+  document.addEventListener('keydown', e => {
+    if (e.code === 'Space' && e.target !== textInput) {
+      e.preventDefault();
+      if (words.length === 0) return;
+      if (isPlaying) pauseReading();
+      else startReading();
+    }
+  });
+</script>
+</body>
+</html>
